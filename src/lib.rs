@@ -360,6 +360,23 @@ pub struct WalletClient {
 }
 
 impl WalletClient {
+    /// Create a new wallet
+    pub async fn create_wallet(
+        &self,
+        filename: String,
+        password: Option<String>,
+        language: String,
+    ) -> anyhow::Result<()> {
+        let params = empty()
+            .chain(once(("filename", filename.into())))
+            .chain(password.map(|v| ("password", v.into())))
+            .chain(once(("language", language.into())));
+
+        self.inner
+            .request("create_wallet", RpcParams::map(params))
+            .await
+    }
+
     /// Return the wallet's balance.
     pub async fn get_balance(
         &self,
