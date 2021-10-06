@@ -1,3 +1,4 @@
+use std::ops::Range;
 use crate::util::*;
 use chrono::prelude::*;
 use monero::{cryptonote::hash::Hash as CryptoNoteHash, util::address::PaymentId, Address};
@@ -212,6 +213,29 @@ pub struct AddressData {
     pub addresses: Vec<SubaddressData>,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum TransferType {
+    All,
+    Available,
+    Unavailable
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IncomingTransfers {
+    pub transfers: Option<Vec<IncomingTransfer>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IncomingTransfer {
+    pub amount: u64,
+    pub global_index: u64,
+    pub key_image: Vec<u8>,
+    pub spent: bool,
+    pub subaddr_index: u64,
+    pub tx_hash: HashString<CryptoNoteHash>,
+    pub tx_size: u64,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TransferOptions {
     pub account_index: Option<u64>,
@@ -284,21 +308,18 @@ impl From<GetTransfersCategory> for &'static str {
 }
 
 #[derive(Clone, Debug)]
-pub struct GetTransfersSelector<T> {
+pub struct GetTransfersSelector {
     pub category_selector: HashMap<GetTransfersCategory, bool>,
-    /// Filter transfers by block height.
-    pub filter_by_height: Option<T>,
     /// Index of the account to query for transfers. (defaults to 0)
     pub account_index: Option<u64>,
     /// List of subaddress indices to query for transfers. (Defaults to empty - all indices)
     pub subaddr_indices: Option<Vec<u64>>,
 }
 
-impl<T> Default for GetTransfersSelector<T> {
+impl Default for GetTransfersSelector {
     fn default() -> Self {
         Self {
             category_selector: Default::default(),
-            filter_by_height: Default::default(),
             account_index: Default::default(),
             subaddr_indices: Default::default(),
         }

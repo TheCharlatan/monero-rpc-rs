@@ -88,9 +88,7 @@ impl RemoteCaller {
             .await?;
 
         trace!("Received JSON-RPC response: {:?}", rsp);
-
         let v = jsonrpc_core::Result::<Value>::from(rsp);
-
         Ok(v)
     }
 
@@ -132,7 +130,9 @@ impl CallerWrapper {
         T: for<'de> Deserialize<'de> + Send + 'static,
     {
         let c = self.0.json_rpc_call(method, params);
-        Ok(serde_json::from_value(c.await??)?)
+        let d = c.await??;
+        let res = Ok(serde_json::from_value(d)?);
+        res
     }
 
     async fn daemon_rpc_request<T>(
@@ -382,6 +382,19 @@ impl RegtestDaemonClient {
             .await?
             .into_inner()
             .height)
+    }
+}
+
+impl Serialize for TransferType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where 
+        S: Serializer,
+    {
+        serializer.serialize_str(match self {
+            TransferType::All => "all",
+            TransferType::Available => "available",
+            TransferType::Unavailable => "unavailable",
+        })
     }
 }
 
@@ -765,17 +778,28 @@ impl WalletClient {
             .map(|v| v.tx_hash_list.into_iter().map(|v| v.0).collect())
     }
 
-    /// Returns a list of transfers.
-    pub async fn get_transfers<T>(
+    pub async fn incoming_transfers(
         &self,
-        selector: GetTransfersSelector<T>,
+        transfer_type: TransferType,
+        account_index: Option<u64>,
+        subaddr_indices: Option<Vec<u64>>,
+    ) -> anyhow::Result<IncomingTransfers> {
+        let params = empty()
+            .chain(once(("transfer_type", serde_json::to_value(transfer_type)?)))
+            .chain(account_index.map(|v| ("account_index", v.into())))
+            .chain(subaddr_indices.map(|v| ("subaddr_indices", v.into())));
+
+        self.inner.request("incoming_transfers", RpcParams::map(params)).await
+    }
+
+    /// Returns a list of transfers.
+    pub async fn get_transfers(
+        &self,
+        selector: GetTransfersSelector,
     ) -> anyhow::Result<HashMap<GetTransfersCategory, Vec<GotTransfer>>>
-    where
-        T: RangeBounds<u64> + Send,
     {
         let GetTransfersSelector {
             category_selector,
-            filter_by_height,
             account_index,
             subaddr_indices,
         } = selector;
@@ -786,31 +810,6 @@ impl WalletClient {
                     .into_iter()
                     .map(|(cat, b)| (cat.into(), b.into())),
             )
-            .chain({
-                filter_by_height
-                    .map(|range| {
-                        empty()
-                            .chain(Some(("filter_by_height", true.into())))
-                            .chain({
-                                match range.start_bound() {
-                                    Bound::Included(b) => Some(b - 1),
-                                    Bound::Excluded(b) => Some(*b),
-                                    Bound::Unbounded => None,
-                                }
-                                .map(|b| ("min_height", b.into()))
-                            })
-                            .chain({
-                                match range.end_bound() {
-                                    Bound::Included(b) => Some(*b),
-                                    Bound::Excluded(b) => Some(b.checked_sub(1).unwrap_or(0)),
-                                    Bound::Unbounded => None,
-                                }
-                                .map(|b| ("max_height", b.into()))
-                            })
-                    })
-                    .into_iter()
-                    .flatten()
-            })
             .chain(account_index.map(|v| ("account_index", v.into())))
             .chain(subaddr_indices.map(|v| ("subaddr_indices", v.into())));
 
