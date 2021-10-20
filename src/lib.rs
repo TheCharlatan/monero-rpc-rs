@@ -387,7 +387,7 @@ impl RegtestDaemonClient {
 
 impl Serialize for TransferType {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where 
+    where
         S: Serializer,
     {
         serializer.serialize_str(match self {
@@ -668,6 +668,23 @@ impl WalletClient {
         Ok(monero::PrivateKey::from_slice(&rsp.key.0)?)
     }
 
+    /// Return the view private key.
+    pub async fn query_spend_key(&self) -> anyhow::Result<monero::PrivateKey> {
+        #[derive(Deserialize)]
+        struct Rsp {
+            key: HashString<Vec<u8>>,
+        }
+
+        let params = empty().chain(once(("key_type", "spend_key".into())));
+
+        let rsp = self
+            .inner
+            .request::<Rsp>("query_key", RpcParams::map(params))
+            .await?;
+
+        Ok(monero::PrivateKey::from_slice(&rsp.key.0)?)
+    }
+
     /// Returns the wallet's current block height.
     pub async fn get_height(&self) -> anyhow::Result<NonZeroU64> {
         #[derive(Deserialize)]
@@ -680,6 +697,34 @@ impl WalletClient {
             .request::<Rsp>("get_height", RpcParams::None)
             .await?
             .height)
+    }
+
+    /// Sweep a wallet's entire unlocked balance
+    pub async fn sweep_all(&self, args: SweepAllArgs) -> anyhow::Result<SweepAllData> {
+        let params = empty()
+            .chain(once(("address", serde_json::to_value(args.address)?)))
+            .chain(once((
+                "account_index",
+                Value::Number(args.account_index.into()),
+            )))
+            .chain(args.subaddr_indices.map(|v| {
+                (
+                    "subaddr_indices",
+                    v.into_iter().map(From::from).collect::<Vec<Value>>().into(),
+                )
+            }))
+            .chain(once(("priority", serde_json::to_value(args.priority)?)))
+            .chain(once(("mixin", args.mixin.into())))
+            .chain(once(("ring_size", args.ring_size.into())))
+            .chain(once(("unlock_time", args.unlock_time.into())))
+            .chain(args.get_tx_keys.map(|v| ("get_tx_keys", v.into())))
+            .chain(args.below_amount.map(|v| ("below_amount", v.into())))
+            .chain(args.do_not_relay.map(|v| ("do_not_relay", v.into())))
+            .chain(args.get_tx_hex.map(|v| ("get_tx_hex", v.into())))
+            .chain(args.get_tx_metadata.map(|v| ("get_tx_metadata", v.into())));
+        self.inner
+            .request("sweep_all", RpcParams::map(params))
+            .await
     }
 
     /// Send monero to a number of recipients.
@@ -785,19 +830,23 @@ impl WalletClient {
         subaddr_indices: Option<Vec<u64>>,
     ) -> anyhow::Result<IncomingTransfers> {
         let params = empty()
-            .chain(once(("transfer_type", serde_json::to_value(transfer_type)?)))
+            .chain(once((
+                "transfer_type",
+                serde_json::to_value(transfer_type)?,
+            )))
             .chain(account_index.map(|v| ("account_index", v.into())))
             .chain(subaddr_indices.map(|v| ("subaddr_indices", v.into())));
 
-        self.inner.request("incoming_transfers", RpcParams::map(params)).await
+        self.inner
+            .request("incoming_transfers", RpcParams::map(params))
+            .await
     }
 
     /// Returns a list of transfers.
     pub async fn get_transfers(
         &self,
         selector: GetTransfersSelector,
-    ) -> anyhow::Result<HashMap<GetTransfersCategory, Vec<GotTransfer>>>
-    {
+    ) -> anyhow::Result<HashMap<GetTransfersCategory, Vec<GotTransfer>>> {
         let GetTransfersSelector {
             category_selector,
             account_index,
