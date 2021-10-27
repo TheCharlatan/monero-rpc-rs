@@ -257,8 +257,8 @@ pub struct SweepAllData {
     pub tx_key_list: Option<Vec<HashString<CryptoNoteHash>>>,
     pub amount_list: Vec<u64>,
     pub fee_list: Vec<u64>,
-    pub tx_blob_list: Vec<String>,
-    pub tx_metadata_list: Vec<String>,
+    pub tx_blob_list: Option<Vec<String>>,
+    pub tx_metadata_list: Option<Vec<String>>,
     pub multisig_txset: String,
     pub unsigned_txset: String,
 }

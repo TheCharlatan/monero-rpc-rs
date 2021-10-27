@@ -707,12 +707,7 @@ impl WalletClient {
                 "account_index",
                 Value::Number(args.account_index.into()),
             )))
-            .chain(args.subaddr_indices.map(|v| {
-                (
-                    "subaddr_indices",
-                    v.into_iter().map(From::from).collect::<Vec<Value>>().into(),
-                )
-            }))
+            .chain(args.subaddr_indices.map(|v| ("subaddr_indices", v.into())))
             .chain(once(("priority", serde_json::to_value(args.priority)?)))
             .chain(once(("mixin", args.mixin.into())))
             .chain(once(("ring_size", args.ring_size.into())))
